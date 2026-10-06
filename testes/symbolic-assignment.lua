@@ -28,7 +28,10 @@ assert(t[2] = "two")
 99 → t.answer
 assert(t.answer = 99)
 
-"changed" → t[2]
+local function changed_value()
+  return "changed"
+end
+changed_value() → t[2]
 assert(t[2] = "changed")
 
 local sum ← 0
