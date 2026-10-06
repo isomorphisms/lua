@@ -1141,6 +1141,47 @@ void luaK_storevar (FuncState *fs, expdesc *var, expdesc *ex) {
 
 
 /*
+** Store the value already held in 'reg' into 'var' without consuming
+** that register.  Rightward assignment evaluates its value before its
+** target, so the source register must stay live while target expressions
+** are compiled.
+*/
+void luaK_storevarfromreg (FuncState *fs, expdesc *var, int reg) {
+  switch (var->k) {
+    case VLOCAL: {
+      if (reg != var->u.var.ridx)
+        luaK_codeABC(fs, OP_MOVE, var->u.var.ridx, reg, 0);
+      return;
+    }
+    case VUPVAL: {
+      luaK_codeABC(fs, OP_SETUPVAL, reg, var->u.info, 0);
+      break;
+    }
+    case VINDEXUP: {
+      luaK_codeABCk(fs, OP_SETTABUP, var->u.ind.t, var->u.ind.idx, reg, 0);
+      break;
+    }
+    case VINDEXI: {
+      luaK_codeABCk(fs, OP_SETI, var->u.ind.t, var->u.ind.idx, reg, 0);
+      break;
+    }
+    case VINDEXSTR: {
+      luaK_codeABCk(fs, OP_SETFIELD, var->u.ind.t, var->u.ind.idx, reg, 0);
+      break;
+    }
+    case VVARGIND: {
+      needvatab(fs->f);
+    }  /* FALLTHROUGH */
+    case VINDEXED: {
+      luaK_codeABCk(fs, OP_SETTABLE, var->u.ind.t, var->u.ind.idx, reg, 0);
+      break;
+    }
+    default: lua_assert(0);
+  }
+}
+
+
+/*
 ** Negate condition 'e' (where 'e' is a comparison).
 */
 static void negatecondition (FuncState *fs, expdesc *e) {
