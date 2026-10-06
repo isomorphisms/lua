@@ -1547,6 +1547,7 @@ static void rightassign (LexState *ls, expdesc *value) {
     check_condition(ls, vkisvar(var.k), "assignment target expected");
     check_readonly(ls, &var);
     luaK_storevarfromreg(fs, &var, source);
+    fs->freereg = cast_byte(source + 1);  /* discard target temporaries */
   } while (ls->t.token == TK_RARROW);
 }
 
