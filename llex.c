@@ -47,8 +47,8 @@ static const char *const luaX_tokens [] = {
     "end", "false", "for", "function", "global", "goto", "if",
     "in", "local", "nil", "not", "or", "repeat",
     "return", "then", "true", "until", "while",
-    "//", "..", "...", "==", ">=", "<=", "~=",
-    "<<", ">>", "::", "<eof>",
+    "//", "..", "...", "=", ">=", "<=", "~=",
+    "←", "→", "<<", ">>", "::", "<eof>",
     "<number>", "<integer>", "<name>", "<string>"
 };
 
@@ -507,8 +507,8 @@ static int llex (LexState *ls, SemInfo *seminfo) {
       }
       case '=': {
         next(ls);
-        if (check_next1(ls, '=')) return TK_EQ;  /* '==' */
-        else return '=';
+        check_next1(ls, '=');  /* keep '==' as an equality alias */
+        return TK_EQ;  /* '=' is equality */
       }
       case '<': {
         next(ls);
@@ -536,6 +536,22 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         next(ls);
         if (check_next1(ls, ':')) return TK_DBCOLON;  /* '::' */
         else return ':';
+      }
+      case 0xE2: {  /* UTF-8 arrows U+2190 and U+2192 */
+        next(ls);  /* skip first byte */
+        if (ls->current != 0x86)
+          lexerror(ls, "unsupported UTF-8 token", 0);
+        next(ls);  /* skip second byte */
+        if (ls->current == 0x90) {  /* U+2190 LEFTWARDS ARROW */
+          next(ls);
+          return TK_LARROW;
+        }
+        else if (ls->current == 0x92) {  /* U+2192 RIGHTWARDS ARROW */
+          next(ls);
+          return TK_RARROW;
+        }
+        else
+          lexerror(ls, "unsupported UTF-8 token", 0);
       }
       case '"': case '\'': {  /* short literal strings */
         read_string(ls, ls->current, seminfo);
