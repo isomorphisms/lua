@@ -47,8 +47,8 @@ static const char *const luaX_tokens [] = {
     "end", "false", "for", "function", "global", "goto", "if",
     "in", "local", "nil", "not", "or", "repeat",
     "return", "then", "true", "until", "while",
-    "//", "..", "...", "==", ">=", "<=", "~=",
-    "<<", ">>", "::", "<eof>",
+    "//", "..", "...", "=", ">=", "<=", "~=",
+    "←", "→", "<<", ">>", "::", "<eof>",
     "<number>", "<integer>", "<name>", "<string>"
 };
 
@@ -464,6 +464,51 @@ static void read_string (LexState *ls, int del, SemInfo *seminfo) {
 }
 
 
+/*
+** Read the small, deliberate UTF-8 operator alphabet used by this fork.
+** Each glyph lowers to an existing Lua token; arrows are the only new
+** assignment tokens.
+*/
+static int read_symbolic_token (LexState *ls) {
+  int first = ls->current;
+  next(ls);  /* skip first UTF-8 byte */
+  switch (first) {
+    case 0xC3: {  /* two-byte Latin-1 symbols */
+      if (ls->current == 0x97) { next(ls); return '*'; }  /* × U+00D7 */
+      if (ls->current == 0xB7) { next(ls); return '/'; }  /* ÷ U+00F7 */
+      break;
+    }
+    case 0xC6: {
+      if (ls->current == 0x92) { next(ls); return TK_FUNCTION; }  /* ƒ U+0192 */
+      break;
+    }
+    case 0xCE: {
+      if (ls->current == 0xBB) { next(ls); return TK_FUNCTION; }  /* λ U+03BB */
+      break;
+    }
+    case 0xE2: {
+      int second = ls->current;
+      next(ls);
+      if (second == 0x86) {
+        if (ls->current == 0x90) { next(ls); return TK_LARROW; }  /* ← */
+        if (ls->current == 0x92) { next(ls); return TK_RARROW; }  /* → */
+      }
+      else if (second == 0x88) {
+        if (ls->current == 0x92) { next(ls); return '-'; }  /* − U+2212 */
+      }
+      else if (second == 0x89) {
+        if (ls->current == 0x9F) { next(ls); return TK_EQ; }  /* ≟ U+225F */
+        if (ls->current == 0xA0) { next(ls); return TK_NE; }  /* ≠ U+2260 */
+        if (ls->current == 0xA4) { next(ls); return TK_LE; }  /* ≤ U+2264 */
+        if (ls->current == 0xA5) { next(ls); return TK_GE; }  /* ≥ U+2265 */
+      }
+      break;
+    }
+  }
+  lexerror(ls, "unsupported UTF-8 token", 0);
+}
+
+
 static int llex (LexState *ls, SemInfo *seminfo) {
   luaZ_resetbuffer(ls->buff);
   for (;;) {
@@ -507,8 +552,8 @@ static int llex (LexState *ls, SemInfo *seminfo) {
       }
       case '=': {
         next(ls);
-        if (check_next1(ls, '=')) return TK_EQ;  /* '==' */
-        else return '=';
+        check_next1(ls, '=');  /* keep '==' as an equality alias */
+        return TK_EQ;  /* '=' is equality */
       }
       case '<': {
         next(ls);
@@ -536,6 +581,9 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         next(ls);
         if (check_next1(ls, ':')) return TK_DBCOLON;  /* '::' */
         else return ':';
+      }
+      case 0xC3: case 0xC6: case 0xCE: case 0xE2: {
+        return read_symbolic_token(ls);
       }
       case '"': case '\'': {  /* short literal strings */
         read_string(ls, ls->current, seminfo);

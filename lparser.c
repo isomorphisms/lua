@@ -936,7 +936,7 @@ typedef struct ConsControl {
 
 
 static void recfield (LexState *ls, ConsControl *cc) {
-  /* recfield -> (NAME | '['exp']') = exp */
+  /* recfield -> (NAME | '['exp']') LEFT_ARROW exp */
   FuncState *fs = ls->fs;
   lu_byte reg = ls->fs->freereg;
   expdesc tab, key, val;
@@ -945,7 +945,7 @@ static void recfield (LexState *ls, ConsControl *cc) {
   else  /* ls->t.token == '[' */
     yindex(ls, &key);
   cc->nh++;
-  checknext(ls, '=');
+  checknext(ls, TK_LARROW);
   tab = *cc->t;
   luaK_indexed(fs, &tab, &key);
   expr(ls, &val);
@@ -993,7 +993,7 @@ static void field (LexState *ls, ConsControl *cc) {
   /* field -> listfield | recfield */
   switch(ls->t.token) {
     case TK_NAME: {  /* may be 'listfield' or 'recfield' */
-      if (luaX_lookahead(ls) != '=')  /* expression? */
+      if (luaX_lookahead(ls) != TK_LARROW)  /* expression? */
         listfield(ls, cc);
       else
         recfield(ls, cc);
@@ -1496,7 +1496,7 @@ static void storevartop (FuncState *fs, expdesc *var) {
 ** (a 'suffixedexp') was already read by the caller.
 **
 ** assignment -> suffixedexp restassign
-** restassign -> ',' suffixedexp restassign | '=' explist
+** restassign -> ',' suffixedexp restassign | LEFT_ARROW explist
 */
 static void restassign (LexState *ls, struct LHS_assign *lh, int nvars) {
   expdesc e;
@@ -1512,9 +1512,9 @@ static void restassign (LexState *ls, struct LHS_assign *lh, int nvars) {
     restassign(ls, &nv, nvars+1);
     leavelevel(ls);
   }
-  else {  /* restassign -> '=' explist */
+  else {  /* restassign -> LEFT_ARROW explist */
     int nexps;
-    checknext(ls, '=');
+    checknext(ls, TK_LARROW);
     nexps = explist(ls, &e);
     if (nexps != nvars)
       adjust_assign(ls, nvars, nexps, &e);
@@ -1525,6 +1525,30 @@ static void restassign (LexState *ls, struct LHS_assign *lh, int nvars) {
     }
   }
   storevartop(ls->fs, &lh->v);  /* default assignment */
+}
+
+
+/*
+** Parse one or more rightward assignments.  The value is evaluated once,
+** before any target expressions, and remains live while those targets are
+** compiled.
+**
+** rightassign -> RIGHT_ARROW suffixedexp {RIGHT_ARROW suffixedexp}
+*/
+static void rightassign (LexState *ls, expdesc *value) {
+  FuncState *fs = ls->fs;
+  int source;
+  luaK_exp2nextreg(fs, value);
+  source = value->u.info;
+  do {
+    expdesc var;
+    luaX_next(ls);  /* skip right arrow */
+    suffixedexp(ls, &var);
+    check_condition(ls, vkisvar(var.k), "assignment target expected");
+    check_readonly(ls, &var);
+    luaK_storevarfromreg(fs, &var, source);
+    fs->freereg = cast_byte(source + 1);  /* discard target temporaries */
+  } while (ls->t.token == TK_RARROW);
 }
 
 
@@ -1686,13 +1710,13 @@ static void forbody (LexState *ls, int base, int line, int nvars, int isgen) {
 
 
 static void fornum (LexState *ls, TString *varname, int line) {
-  /* fornum -> NAME = exp,exp[,exp] forbody */
+  /* fornum -> NAME LEFT_ARROW exp,exp[,exp] forbody */
   FuncState *fs = ls->fs;
   int base = fs->freereg;
   new_localvarliteral(ls, "(for state)");
   new_localvarliteral(ls, "(for state)");
   new_varkind(ls, varname, RDKCONST);  /* control variable */
-  checknext(ls, '=');
+  checknext(ls, TK_LARROW);
   exp1(ls);  /* initial value */
   checknext(ls, ',');
   exp1(ls);  /* limit */
@@ -1743,9 +1767,9 @@ static void forstat (LexState *ls, int line) {
   luaX_next(ls);  /* skip 'for' */
   varname = str_checkname(ls);  /* first variable name */
   switch (ls->t.token) {
-    case '=': fornum(ls, varname, line); break;
+    case TK_LARROW: fornum(ls, varname, line); break;
     case ',': case TK_IN: forlist(ls, varname); break;
-    default: luaX_syntaxerror(ls, "'=' or 'in' expected");
+    default: luaX_syntaxerror(ls, "'←' or 'in' expected");
   }
   check_match(ls, TK_END, TK_FOR, line);
   leaveblock(fs);  /* loop scope ('break' jumps to this point) */
@@ -1819,7 +1843,7 @@ static void checktoclose (FuncState *fs, int level) {
 
 
 static void localstat (LexState *ls) {
-  /* stat -> LOCAL NAME attrib { ',' NAME attrib } ['=' explist] */
+  /* stat -> LOCAL NAME attrib { ',' NAME attrib } [LEFT_ARROW explist] */
   FuncState *fs = ls->fs;
   int toclose = -1;  /* index of to-be-closed variable (if any) */
   Vardesc *var;  /* last variable */
@@ -1840,7 +1864,7 @@ static void localstat (LexState *ls) {
     }
     nvars++;
   } while (testnext(ls, ','));
-  if (testnext(ls, '='))  /* initialization? */
+  if (testnext(ls, TK_LARROW))  /* initialization? */
     nexps = explist(ls, &e);
   else {
     e.k = VVOID;
@@ -1925,7 +1949,7 @@ static void globalnames (LexState *ls, lu_byte defkind) {
     lastidx = new_varkind(ls, vname, kind);
     nvars++;
   } while (testnext(ls, ','));
-  if (testnext(ls, '='))  /* initialization? */
+  if (testnext(ls, TK_LARROW))  /* initialization? */
     initglobal(ls, nvars, lastidx - nvars + 1, 0, ls->linenumber);
   fs->nactvar = cast_short(fs->nactvar + nvars);  /* activate declaration */
 }
@@ -2000,11 +2024,14 @@ static void funcstat (LexState *ls, int line) {
 
 
 static void exprstat (LexState *ls) {
-  /* stat -> func | assignment */
+  /* stat -> func | left assignment | right assignment */
   FuncState *fs = ls->fs;
   struct LHS_assign v;
-  suffixedexp(ls, &v.v);
-  if (ls->t.token == '=' || ls->t.token == ',') { /* stat -> assignment ? */
+  expr(ls, &v.v);
+  if (ls->t.token == TK_RARROW) {
+    rightassign(ls, &v.v);
+  }
+  else if (ls->t.token == TK_LARROW || ls->t.token == ',') {
     v.prev = NULL;
     restassign(ls, &v, 1);
   }

@@ -1,0 +1,25 @@
+name: symbolic assignment
+
+on:
+  push:
+    branches:
+      - assignment-arrows-equality
+  pull_request:
+    paths:
+      - llex.c
+      - llex.h
+      - lparser.c
+      - lcode.c
+      - lcode.h
+      - testes/symbolic-assignment.lua
+      - .github/workflows/symbolic-assignment.yml
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Lua
+        run: make -j2
+      - name: Exercise symbolic syntax
+        run: ./lua testes/symbolic-assignment.lua
