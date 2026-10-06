@@ -43,5 +43,24 @@ assert(sum = 10)
 local equality ← (1 + 1 = 2)
 assert(equality)
 assert((1 = 1) and (2 ~= 1))
+assert(2 ≟ 2)
+assert(2 ≠ 3)
+assert(2 ≤ 2)
+assert(3 ≥ 2)
+
+local arithmetic ← 6 × 7
+assert(arithmetic = 42)
+assert(84 ÷ 2 = 42)
+assert(5 − 3 = 2)
+
+local square ← λ(x)
+  return x × x
+end
+assert(square(6) = 36)
+
+local increment ← ƒ(x)
+  return x + 1
+end
+assert(increment(8) = 9)
 
 print("symbolic assignment: ok")
